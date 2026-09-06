@@ -1,0 +1,54 @@
+{
+  "name": "dsh-model-by-preset",
+  "description": "Auto-assign a model and reasoning-effort to each new blank session, per agent preset, for DeepSeek Harness web.",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.ru.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "plugin",
+    "preset",
+    "model",
+    "routing",
+    "session"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThinkForge-core/dsh-model-by-preset.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ThinkForge-core/dsh-model-by-preset/issues"
+  },
+  "homepage": "https://github.com/ThinkForge-core/dsh-model-by-preset#readme",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection"
+      ]
+    }
+  }
+}

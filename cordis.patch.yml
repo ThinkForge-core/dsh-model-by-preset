@@ -1,0 +1,4 @@
+# dsh-model-by-preset bundle patch: insert the plugin row over the web profile layer.
+- insert:
+    - id: dsh-model-by-preset
+      name: 'dsh-model-by-preset'

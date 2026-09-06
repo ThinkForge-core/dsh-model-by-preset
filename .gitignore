@@ -1,0 +1,8 @@
+node_modules/
+*.tgz
+.pnpm-store/
+.DS_Store
+*.tsbuildinfo
+coverage/
+__pycache__/
+*.pyc
