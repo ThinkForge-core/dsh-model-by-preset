@@ -48,6 +48,10 @@ DEFAULT_PROFILE = "web"
 
 PLATFORM = sys.platform  # 'linux', 'darwin', 'win32', ...
 
+# Version of DeepSeek Harness this plugin is developed against. Behaviour is only
+# guaranteed on an exact match; other versions may work but are not supported.
+TARGET_DSH_VERSION = "0.1.1-rc.2"
+
 
 # ---------------------------------------------------------------------------
 # console helpers
@@ -139,6 +143,24 @@ def which(*names: str) -> str | None:
     return None
 
 
+def dsh_version(bin_path: str | None) -> str | None:
+    """Run `dsh --version` and return the trimmed string, or None if it fails
+    (non-zero exit, empty output, or the binary cannot be run)."""
+    if not bin_path:
+        return None
+    try:
+        out = subprocess.run(
+            [bin_path, "--version"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    version = out.stdout.strip()
+    return version or None
+
+
 _OWNER_RE = re.compile(
     r"(?:github\.com[/:]|git@github\.com:)(?P<owner>[^/]+)/(?P<repo>[^/]+?)(?:\.git)?$"
 )
@@ -180,6 +202,7 @@ class Detection:
         self.repo_dir = repo_dir.resolve()
         self.platform = PLATFORM
         self.dsh_bin = which("dsh")
+        self.dsh_ver = dsh_version(self.dsh_bin)
         self.pnpm_bin = which("pnpm")
         self.npm_bin = which("npm")
         self.python = sys.executable or "python3"
@@ -210,6 +233,8 @@ class Detection:
         lines = [
             f"platform        : {self.platform}",
             f"dsh CLI         : {ok('dsh', bool(self.dsh_bin))}  {self.dsh_bin or ''}".rstrip(),
+            f"dsh version     : {self.dsh_ver or '(unknown)'}   "
+            f"(target for this plugin: {TARGET_DSH_VERSION})",
             f"pnpm            : {ok('pnpm', bool(self.pnpm_bin))}  {self.pnpm_bin or ''}".rstrip(),
             f"npm             : {ok('npm', bool(self.npm_bin))}  {self.npm_bin or ''}".rstrip(),
             f"DSH_HOME        : {self.home}",
@@ -219,6 +244,17 @@ class Detection:
             f"github owner    : {self.owner or '(none — no origin remote; pass --owner for method C)'}",
         ]
         return lines
+
+    def version_warning(self) -> str | None:
+        """Yellow note when the installed dsh version is not the target. Warning
+        only — never blocks, because behaviour may still work on other versions."""
+        if not self.dsh_ver:
+            return None
+        if self.dsh_ver == TARGET_DSH_VERSION:
+            return None
+        return (_warn(f"Note: installed dsh is {self.dsh_ver}, this plugin is developed "
+                      f"and verified against {TARGET_DSH_VERSION}. "
+                      "Functionality on a different dsh version is not guaranteed."))
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +403,8 @@ def main(argv: list[str]) -> int:
     log(_c("dsh-model-by-preset installer"))
     for line in det.toolchain_report():
         log("  " + line)
+    if det.version_warning():
+        log("  " + det.version_warning())
 
     if args.list:
         return 0

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.1 — 2026-09-07
+
+Documentation and versioning release.
+
+- Restructured README: a short npm-facing `README.md` in the repo root and the
+  full documentation in `.github/README.md` (shown on GitHub); added the target
+  DSH version to both. Dropped the Russian translation (`README.ru.md` removed
+  from the package `files`).
+- Added install/version guidance: the plugin is developed and verified against
+  **DSH `0.1.1-rc.2`**; `install.py` now warns (non-blocking) when the installed
+  `dsh --version` differs from that target.
+
 ## 0.1.0 — 2026-09-06
 
 Initial public release under the name **dsh-model-by-preset** (rebranded and
