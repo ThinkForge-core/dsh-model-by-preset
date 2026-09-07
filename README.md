@@ -51,7 +51,7 @@ carries `agentPreset` and `blank`. A row is auto-mapped only when:
 
 ## Requirements
 
-- DeepSeek Harness **web** profile (DSH `0.1.1-rc.2` or later).
+- DeepSeek Harness **web** profile (DSH `0.1.1-rc.2`).
 - The provider(s) and model(s) you want to auto-assign must already be configured
   in your harness (settings / providers). This plugin only *selects* a model — it
   does not create providers.
