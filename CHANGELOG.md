@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.2 — 2026-09-26
+
+Bug fix.
+
+- `/model-by-preset`: the command's `description` is now a function, as the
+  `CommandContribution` contract calls it. A plain string threw
+  `contribution.description is not a function` when the command source was
+  resolved, which took the whole `/` command source down instead of just this
+  entry.
+
 ## 0.1.1 — 2026-09-07
 
 Documentation and versioning release.
