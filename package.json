@@ -1,7 +1,7 @@
 {
   "name": "dsh-model-by-preset",
   "description": "Auto-assign a model and reasoning-effort to each new blank session, per agent preset, for DeepSeek Harness web.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -45,8 +45,9 @@
     "client": {
       "platform": "web",
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-connection"
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-commands"
       ]
     }
   }

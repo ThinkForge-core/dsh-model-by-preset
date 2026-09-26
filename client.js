@@ -2,23 +2,28 @@
 //
 // Loaded by the web app's module loader as /plugins/dsh-model-by-preset/client.js.
 //
+// Data sources (0.1.7 client): the `ctx.remote` namespaces, never
+// `connection.api` (the connection service is a transport handle and carries no
+// API surface). A session's live facts (agentPreset, modelSelection) come from
+// its durable projection inside `sessions.list` snapshots.
+//
 // Features:
-//  1. Auto-map a NEW (blank) session's model by its agent preset, using the
-//     same `session.selectModel` RPC the model picker issues. Because a blank
-//     session is REUSED and only its agentPreset changes, a blank session is
-//     re-evaluated whenever its agentPreset changes.
+//  1. Auto-map a NEW (blank) session's model by its agent preset, submitting the
+//     same `remote.session.selectModel` call the model picker issues. Because a
+//     blank session is REUSED and only its agentPreset changes, a blank session
+//     is re-evaluated whenever its agentPreset changes.
 //  2. `/model-by-preset` editor window: rows for EVERY preset the host really
-//     serves (agentPreset.list — shipped AND user-authored presets), and for
-//     each row a MODEL dropdown built from the host's real model catalog
-//     (llm.models: every provider that is configured, with the models that
-//     provider advertises) plus a reasoning-EFFORT dropdown fed by that
-//     model's own `reasoning.efforts`. A debug-log toggle lives here too.
-//     Settings persist in localStorage (`dsh-model-by-preset.overrides`,
-//     `dsh-model-by-preset.debug`).
+//     serves (remote.agentPresets.list — shipped AND user-authored presets),
+//     and for each row a MODEL dropdown built from the host's real model
+//     catalog (remote.session.modelCatalog: every provider that is configured,
+//     with the models that provider advertises) plus a reasoning-EFFORT
+//     dropdown fed by that model's own `reasoning.efforts`. A debug-log toggle
+//     lives here too. Settings persist in localStorage
+//     (`dsh-model-by-preset.overrides`, `dsh-model-by-preset.debug`).
 //  3. Debug mirror to /api-ext/dsh-model-by-preset.debug is OFF by default and
 //     enabled from the editor (the code stays in place).
 //
-// Command UI note: in 0.1.1 the command surface only supports `popupSelect`, so
+// Command UI note: the command surface supports `popupSelect`, so
 // `/model-by-preset` is a launcher for this plugin's own DOM window.
 //
 // Format: hand-written `window.__ModuleLoader__.load({ id, factory })` (no bundler).
@@ -139,23 +144,21 @@ window.__ModuleLoader__.load({
 		}
 
 		// ---- live host data (root api; NOT api.sessions) ----
-		function listPresets(api) {
-			// agentPreset.list -> { presets: [{ id, trust, isDefault, name?, description?, broken? }], ... }
-			return api.agentPresets.list({}).then(function (res) {
-				var r = res && res.result;
-				if (!r || !r.ok) return null;
-				var presets = (r.value && r.value.presets) || [];
+		function listPresets(remotePresets) {
+			// remote.agentPresets.list() -> RemoteResult<{ presets: [{ id, name?, ... }] }>
+			return remotePresets.list().then(function (res) {
+				if (!res || !res.ok) return null;
+				var presets = (res.value && res.value.presets) || [];
 				return presets
-					.filter(function (p) { return p && p.id && p.broken === undefined; })
+					.filter(function (p) { return p && p.id; })
 					.map(function (p) { return { id: p.id, name: p.name }; });
 			}).catch(function () { return null; });
 		}
-		function listCatalog(api) {
-			// llm.models -> { groups: [{ id, name, models: [{ id, name, reasoning?: { efforts:[{id,name}], defaultEffort? } }] }], failures }
-			return api.llm.models({}).then(function (res) {
-				var r = res && res.result;
-				if (!r || !r.ok) return null;
-				var value = r.value || {};
+		function listCatalog(remoteSessions) {
+			// remote.session.modelCatalog() -> RemoteResult<{ groups: [{ id, name, models: [{ id, name, reasoning?: { efforts:[{id,name}], defaultEffort? } }] }], failures }>
+			return remoteSessions.modelCatalog().then(function (res) {
+				if (!res || !res.ok) return null;
+				var value = res.value || {};
 				var catalog = {};
 				var options = [];
 				((value.groups) || []).forEach(function (group) {
@@ -176,43 +179,51 @@ window.__ModuleLoader__.load({
 			}).catch(function () { return null; });
 		}
 
-		function currentModel(sessionsApi, sessionId) {
-			return sessionsApi
-				.models({ sessionId: sessionId })
-				.then(function (res) {
-					var r = res && res.result;
-					if (!r || !r.ok) return null;
-					return (r.value && r.value.current) || null;
-				})
-				.catch(function () { return null; });
+		// A session's live facts come from its durable projection — the same
+		// values the shell renders — never from a per-session RPC.
+		function projectionOf(row) {
+			return (row && row.projectionValues) || null;
+		}
+		function presetOf(row) {
+			var id = projectionOf(row) && projectionOf(row).agentPreset;
+			return typeof id === "string" && id ? id : undefined;
+		}
+		function currentModelOf(row) {
+			var ms = projectionOf(row) && projectionOf(row).modelSelection;
+			var sel = ms && (ms.next || ms.lastUsed);
+			if (!sel || !sel.provider || !sel.model) return null;
+			return {
+				provider: sel.provider,
+				model: sel.model,
+				reasoningEffort: sel.reasoningEffort || undefined
+			};
 		}
 
-		function select(sessionsApi, sessionId, target, ctx) {
+		function select(remoteSessions, sessionId, target, ctx) {
 			var payload = { sessionId: sessionId, provider: target.provider, model: target.model };
 			if (target.reasoningEffort !== undefined) payload.reasoningEffort = target.reasoningEffort;
-			return sessionsApi.selectModel(payload).then(function (res) {
-				var r = res && res.result;
+			return remoteSessions.selectModel(payload).then(function (res) {
 				var line =
 					"=> " + target.provider + "/" + target.model +
 					(target.reasoningEffort ? " (" + target.reasoningEffort + ")" : "") +
-					" " + (r && r.ok ? "ok" : "err " + JSON.stringify(r && r.error)) +
+					" " + (res && res.ok ? "ok" : "err " + JSON.stringify(res && res.error)) +
 					" session=" + sessionId;
 				if (debugEnabled()) (ctx.logger || console).info("dsh-model-by-preset: " + line);
 				debug({ kind: "select", line: line, sessionId: sessionId });
 			});
 		}
 
-		function scheduleRescan(ctx, sessionsApi) {
+		function scheduleRescan(ctx, remoteSessions) {
 			if (rescanLeft <= 0 || inFlight) return;
 			rescanLeft -= 1;
 			if (rescanTimer !== null) return;
 			rescanTimer = setTimeout(function () {
 				rescanTimer = null;
-				scan(ctx, sessionsApi);
+				scan(ctx, remoteSessions);
 			}, RESCAN_DELAY_MS);
 		}
 
-		function scan(ctx, sessionsApi) {
+		function scan(ctx, remoteSessions) {
 			if (inFlight) return;
 			var sessions = ctx.get && ctx.get("sessions");
 			var list = sessions && sessions.list;
@@ -228,7 +239,7 @@ window.__ModuleLoader__.load({
 				var id = ids[i];
 				var row = byId[id];
 				if (!row) continue;
-				var preset = row.agentPreset;
+				var preset = presetOf(row);
 				var rec = state.get(id);
 				if (ONLY_BLANK && row.blank !== true) {
 					if (!rec || !rec.closed) state.set(id, { closed: true });
@@ -239,7 +250,7 @@ window.__ModuleLoader__.load({
 				if (rec && rec.preset === preset) continue;
 				var t = targetFor(preset);
 				if (!t) continue; // no override for this preset -> leave as-is
-				pending.push({ id: id, target: t, preset: preset });
+				pending.push({ id: id, target: t, preset: preset, current: currentModelOf(row) });
 			}
 			debug({
 				kind: "scan",
@@ -247,7 +258,7 @@ window.__ModuleLoader__.load({
 				unknownPreset: unknown,
 				pending: pending.map(function (x) { return { id: x.id.slice(0, 12), preset: x.preset, target: x.target }; })
 			});
-			if (unknown > 0) scheduleRescan(ctx, sessionsApi);
+			if (unknown > 0) scheduleRescan(ctx, remoteSessions);
 			if (pending.length === 0) return;
 			inFlight = true;
 			Promise.resolve()
@@ -255,15 +266,13 @@ window.__ModuleLoader__.load({
 					var chain = Promise.resolve();
 					pending.forEach(function (item) {
 						chain = chain.then(function () {
-							return currentModel(sessionsApi, item.id).then(function (cur) {
-								if (!same(cur, item.target)) {
-									return select(sessionsApi, item.id, item.target, ctx);
-								}
-								debug({ kind: "skip-same", sessionId: item.id.slice(0, 12), cur: cur });
-								return;
-							}).then(function () {
-								state.set(item.id, { preset: item.preset });
-							});
+							if (same(item.current, item.target)) {
+								debug({ kind: "skip-same", sessionId: item.id.slice(0, 12), cur: item.current });
+							} else {
+								return select(remoteSessions, item.id, item.target, ctx);
+							}
+						}).then(function () {
+							state.set(item.id, { preset: item.preset });
 						});
 					});
 					return chain;
@@ -348,7 +357,7 @@ window.__ModuleLoader__.load({
 			}
 		}
 
-		async function openEditor(ctx, rootApi, sessionsApi) {
+		async function openEditor(ctx, remotePresets, remoteSessions) {
 			if (overlayEl) closeEditor();
 			var modelSelects = {};
 			var effortSelects = {};
@@ -565,17 +574,17 @@ window.__ModuleLoader__.load({
 				} catch (e) {}
 				state.forEach(function (rec, id) { if (!rec.closed) state.delete(id); });
 				closeEditor();
-				scan(ctx, sessionsApi);
+				scan(ctx, remoteSessions);
 			};
 
 			// populate rows from the REAL preset roster + REAL model catalog
-			var roster = await listPresets(rootApi);
+			var roster = await listPresets(remotePresets);
 			if (!overlayEl) return; // closed while loading
 			if (!roster || roster.length === 0) {
 				statusEl.textContent = "No presets returned by agentPreset.list — nothing to map.";
 				return;
 			}
-			catalog = await listCatalog(rootApi);
+			catalog = await listCatalog(remoteSessions);
 			if (!overlayEl) return;
 			rowPresets.length = 0;
 			roster.forEach(function (p) { rowPresets.push({ id: p.id, name: p.name }); });
@@ -590,21 +599,21 @@ window.__ModuleLoader__.load({
 
 		// ── plugin ─────────────────────────────────────────────────────────
 		function apply(ctx) {
-			var connection = ctx.get && ctx.get("connection");
 			var sessions = ctx.get && ctx.get("sessions");
-			var rootApi = connection && connection.api; // sessions + agentPresets + llm + ...
-			var sessionsApi = rootApi && rootApi.sessions;
-			if (!rootApi || !sessionsApi || !sessions || !sessions.list) {
+			var remote = ctx.get && ctx.get("remote");
+			var remoteSessions = remote && remote.session;
+			var remotePresets = remote && remote.agentPresets;
+			if (!sessions || !sessions.list || !remoteSessions || !remotePresets) {
 				(ctx.logger || console).warn(
-					"dsh-model-by-preset: missing connection.api(.sessions) or sessions.list; disabled"
+					"dsh-model-by-preset: missing sessions.list or remote.session/remote.agentPresets; disabled"
 				);
 				return;
 			}
 			var dispose = sessions.list.subscribe(function () {
 				rescanLeft = MAX_RESCAN;
-				scan(ctx, sessionsApi);
+				scan(ctx, remoteSessions);
 			});
-			scan(ctx, sessionsApi);
+			scan(ctx, remoteSessions);
 			if (dispose && typeof dispose === "function") ctx.on("dispose", dispose);
 
 			ctx.inject(["commandUi"], function (scope) {
@@ -628,7 +637,7 @@ window.__ModuleLoader__.load({
 								}];
 							},
 							onSelect: async function () {
-								openEditor(ctx, rootApi, sessionsApi);
+								openEditor(ctx, remotePresets, remoteSessions);
 							}
 						}
 					});
@@ -637,7 +646,7 @@ window.__ModuleLoader__.load({
 		}
 
 		exports.apply = apply;
-		exports.inject = ["sessions", "connection", "commandUi"];
+		exports.inject = ["sessions", "remote", "remote.agentPresets", "remote.session", "commandUi"];
 		return module.exports;
 	}
 });
