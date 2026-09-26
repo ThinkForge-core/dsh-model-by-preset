@@ -612,7 +612,11 @@ window.__ModuleLoader__.load({
 				scope.effect(function () {
 					return command.register({
 						name: "model-by-preset",
-						description: "Model & reasoning effort per preset",
+						// CommandContribution.description is resolved per candidate pass:
+						// the contract calls it as a function, a plain string throws
+						// "contribution.description is not a function" and kills the
+						// whole '/' command source.
+						description: function () { return "Model & reasoning effort per preset"; },
 						available: function () { return true; },
 						ui: {
 							kind: "popupSelect",
